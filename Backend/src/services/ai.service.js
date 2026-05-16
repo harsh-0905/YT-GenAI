@@ -1,3 +1,47 @@
+const Groq = require("groq-sdk")
+
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY
+})
+
+async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
+    const prompt = `Generate an interview report for a candidate with the following details:
+Resume: ${resume}
+Self Description: ${selfDescription}
+Job Description: ${jobDescription}
+
+Respond ONLY with a valid JSON object (no markdown, no backticks) with this exact structure:
+{
+  "matchScore": <number 0-100>,
+  "title": "<job title string>",
+  "technicalQuestions": [
+    { "question": "<string>", "intention": "<string>", "answer": "<string>" }
+  ],
+  "behavioralQuestions": [
+    { "question": "<string>", "intention": "<string>", "answer": "<string>" }
+  ],
+  "skillGaps": [
+    { "skill": "<string>", "severity": "<low|medium|high>" }
+  ],
+  "preparationPlan": [
+    { "day": <number>, "focus": "<string>", "tasks": ["<string>"] }
+  ]
+}
+
+Include 5 technical questions, 5 behavioral questions, 3-5 skill gaps, and a 7-day preparation plan.`
+
+    const response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 4000,
+    })
+
+    const text = response.choices[0].message.content.trim()
+    const clean = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
+    return JSON.parse(clean)
+}
+
 async function generateResumePdf({ resume, selfDescription, jobDescription }) {
     const { jsPDF } = require("jspdf")
 
@@ -43,24 +87,20 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         if (y + needed > 280) { doc.addPage(); y = 15 }
     }
 
-    // ── HEADER BACKGROUND ──
     doc.setFillColor(30, 58, 95)
     doc.rect(0, 0, W, 42, "F")
 
-    // Name
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(22)
     doc.setFont("helvetica", "bold")
     doc.text(data.name || "Resume", margin, 16)
 
-    // Contact line
     doc.setFontSize(8.5)
     doc.setFont("helvetica", "normal")
     const contacts = [data.email, data.phone, data.location, data.linkedin, data.github]
         .filter(Boolean).join("  |  ")
     doc.text(contacts, margin, 24)
 
-    // Summary in header
     if (data.summary) {
         doc.setFontSize(9)
         const summaryLines = doc.splitTextToSize(data.summary, contentW)
@@ -105,7 +145,6 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         })
     }
 
-    // ── SKILLS ──
     if (data.skills?.length) {
         sectionTitle("TECHNICAL SKILLS")
         const skillGroups = []
@@ -116,7 +155,6 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         y += 2
     }
 
-    // ── EXPERIENCE ──
     if (data.experience?.length) {
         sectionTitle("WORK EXPERIENCE")
         data.experience.forEach(exp => {
@@ -135,7 +173,6 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         })
     }
 
-    // ── PROJECTS ──
     if (data.projects?.length) {
         sectionTitle("PROJECTS")
         data.projects.forEach(proj => {
@@ -157,7 +194,6 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         })
     }
 
-    // ── EDUCATION ──
     if (data.education?.length) {
         sectionTitle("EDUCATION")
         data.education.forEach(edu => {
@@ -174,7 +210,6 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
         })
     }
 
-    // ── CERTIFICATIONS ──
     if (data.certifications?.length) {
         sectionTitle("CERTIFICATIONS")
         data.certifications.forEach(cert => bulletLine(cert))
@@ -182,3 +217,5 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
 
     return Buffer.from(doc.output("arraybuffer"))
 }
+
+module.exports = { generateInterviewReport, generateResumePdf }
