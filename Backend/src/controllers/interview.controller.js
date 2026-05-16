@@ -1,40 +1,52 @@
-const pdfParse = require("pdf-parse")
+const pdfParseModule = require("pdf-parse")
+const pdfParse = pdfParseModule.default || pdfParseModule
 const { generateInterviewReport, generateResumePdf } = require("../services/ai.service")
 const interviewReportModel = require("../models/interviewReport.model")
 
 
 /**
  * @description Controller to generate interview report based on user self description, resume and job description.
+ * Resume PDF is optional — selfDescription alone is accepted as fallback.
  */
 async function generateInterViewReportController(req, res) {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: "Resume file is required." })
-        }
-
         const { selfDescription, jobDescription } = req.body
 
-        if (!selfDescription || !jobDescription) {
-            return res.status(400).json({ message: "selfDescription and jobDescription are required." })
+        if (!jobDescription) {
+            return res.status(400).json({ message: "jobDescription is required." })
         }
 
-        const parsedPdf = await pdfParse(req.file.buffer)
-        const resumeText = parsedPdf.text
+        let resumeText = ""
 
-        if (!resumeText || resumeText.trim().length === 0) {
-            return res.status(422).json({ message: "Could not extract text from the uploaded PDF. Make sure it is not a scanned image." })
+        // Extract text from PDF if uploaded
+        if (req.file) {
+            const parsedPdf = await pdfParse(req.file.buffer)
+            resumeText = parsedPdf.text
+
+            if (!resumeText || resumeText.trim().length === 0) {
+                return res.status(422).json({
+                    message: "Could not extract text from the uploaded PDF. Make sure it is not a scanned image."
+                })
+            }
+        }
+
+        // At least one of resume or selfDescription must be provided
+        if (!resumeText && (!selfDescription || selfDescription.trim().length === 0)) {
+            return res.status(400).json({
+                message: "Either a resume PDF or a self description is required."
+            })
         }
 
         const interViewReportByAi = await generateInterviewReport({
             resume: resumeText,
-            selfDescription,
+            selfDescription: selfDescription || "",
             jobDescription
         })
 
         const interviewReport = await interviewReportModel.create({
             user: req.user.id,
             resume: resumeText,
-            selfDescription,
+            selfDescription: selfDescription || "",
             jobDescription,
             ...interViewReportByAi
         })
